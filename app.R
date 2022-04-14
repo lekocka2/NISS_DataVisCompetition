@@ -36,7 +36,6 @@ melt_df$eduGroup <- forcats::fct_relabel(melt_df$eduGroup, function(x) str_wrap(
 melt_df <- melt_df %>%
   group_by(Year) %>%
   mutate(Overall_Median=median(value))
-names <- scales::dollar_format()(melt_df$value)
 
 
 
@@ -50,25 +49,39 @@ ui <- fluidPage(
                                                 span("SEX?", style="color:#77B994; font-size:40px", 
                                                      span("(1995-2019)", style="color:black; font-size:22px")))))))
   ),
+  
   sidebarLayout(
     sidebarPanel(
                  radioButtons(inputId='radio', label='Select choice:', 
-                              c("Full range animation" = 'fullRange', "Single year" = 'singleYear'), selected='fullRange'),
-                 selectInput("years", "Select year:", c(1995,2000:2019), NULL, width=120),
-                 width=3),
+                              c("Full range animation"='fullRange', "Single year"='singleYear'), selected='fullRange'),
+                 #selectInput("years", "Select year:", c(1995,2000:2019), NULL, width=120),
+                 width=3,
+                 
+                 conditionalPanel(
+                   condition="input.radio=='singleYear'",
+                   selectInput("years", "Select year:", c(1995,2000:2019), NULL, width=120)
+                 )
+    ),
     
     mainPanel(
       uiOutput("out")
     )
+    
   )
-  
 )
 
 # server start
 server <- function(input, output) {
   
+  #save year choice
+  yearChoice <- reactive({
+    yr <- as.character(input$years)
+  })
+  
   #full range plot
   output$anim <- renderPlotly({
+    names <- scales::dollar_format()(melt_df$value)
+    
     plot_ly(melt_df, x=~value, y=~eduGroup, frame=~Year, type = 'bar', color=~Sex, text=names, textposition = 'auto',
             insidetextfont = list(size=10, color = 'black')) %>% 
       add_trace(melt_df, x=~Overall_Median, type='scatter', mode='lines', frame=~Year, color="Overall Median Salary", text="",
@@ -80,22 +93,32 @@ server <- function(input, output) {
   
   #single year plot
   output$year <- renderPlotly({
-    plot_ly(melt_df, x=~value, y=~eduGroup, type = 'bar', color=~Sex, text=names, textposition = 'auto',
+    melt_df2 <- melt_df %>%
+      dplyr::filter(Year==yearChoice())
+    
+    names <- scales::dollar_format()(melt_df2$value)
+    annotat <- list(x = 0.83, y = 0.24,
+                 xref = 'paper', yref = 'paper',
+                 text = yearChoice(),
+                 xanchor = 'right', yanchor='bottom', 
+                 showarrow = F, font=list(size=45))
+    
+    plot_ly(melt_df2, x=~value, y=~eduGroup, type = 'bar', color=~Sex, text=names, textposition = 'auto',
             insidetextfont = list(size=10, color = 'black')) %>% 
-      add_trace(melt_df, x=~Overall_Median, type='scatter', mode='lines', color="Overall Median Salary", text="",
+      add_trace(melt_df2, x=~Overall_Median, type='scatter', mode='lines', color="Overall Median Salary", text="",
                 line=list(color='black', dash='dash', width=2)) %>%
       layout(yaxis=list(title=" "), xaxis=list(title="Median Salary (USD)"), 
              title=list(text="<a href='https://nces.ed.gov/programs/digest/d20/tables/dt20_502.20.asp'>Source: Table 502.20; National Center for Education Statistics</a>", x = 0.17), # left align hyperlinked title
-             margin=list(t=60), height=660, legend=list(x=0.66, y=0.1, bgcolor = "#E2E2E2"))
+             margin=list(t=60), height=660, legend=list(x=0.66, y=0.1, bgcolor = "#E2E2E2"),
+             annotations=annotat)
   })
   
-  
+  #choose a plot to render based on radio input
   output$out <- renderUI({
     switch(input$radio, 
-           "fullRange" = plotlyOutput("anim"),
-           "singleYear" = plotlyOutput("year"))
+           "fullRange"=plotlyOutput("anim"),
+           "singleYear"=plotlyOutput("year"))
   })
-  
   
   
 }
