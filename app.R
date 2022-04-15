@@ -20,8 +20,10 @@ colnames(subbed) <- colNames
 
 melted_all <- melt(subbed, id=c("Year","Sex"))
 melted_all$value <- as.numeric(melted_all$value)
+
 # replace numbers with educational levels
 melt_df <- as.data.frame(melted_all) # change to df to store the <br>
+
 melt_df <- melt_df %>%
   mutate(eduGroup = case_when(melt_df$variable==1~"Less than<br>9th grade",
                               melt_df$variable==2~"Some high school,<br>no completion",
@@ -32,12 +34,9 @@ melt_df <- melt_df %>%
                               melt_df$variable==7~"Master's degree",
                               melt_df$variable==8~"Professional degree",
                               melt_df$variable==9~"Doctor's degree"))
-melt_df$eduGroup <- forcats::fct_relabel(melt_df$eduGroup, function(x) str_wrap(x, 10))
 melt_df <- melt_df %>%
   group_by(Year) %>%
   mutate(Overall_Median=median(value))
-
-
 
 # ui start
 ui <- fluidPage(
@@ -59,7 +58,8 @@ ui <- fluidPage(
                  
                  conditionalPanel(
                    condition="input.radio=='singleYear'",
-                   selectInput("years", "Select year:", c(1995,2000:2019), NULL, width=120)
+                   selectInput("years", "Select year:", c(1995,2000:2019), NULL, width=180),
+                   selectInput("text", "Select label:", c("Salary","Percent from median"), "Salary", width=180)
                  )
     ),
     
@@ -78,36 +78,47 @@ server <- function(input, output) {
     yr <- as.character(input$years)
   })
   
+  #save year choice
+  textChoice <- reactive({
+    t <- input$text
+  })
+  
   #full range plot
   output$anim <- renderPlotly({
     names <- scales::dollar_format()(melt_df$value)
     
     plot_ly(melt_df, x=~value, y=~eduGroup, frame=~Year, type = 'bar', color=~Sex, text=names, textposition = 'auto',
             insidetextfont = list(size=10, color = 'black')) %>% 
-      add_trace(melt_df, x=~Overall_Median, type='scatter', mode='lines', frame=~Year, color="Overall Median Salary", text="",
+      add_trace(melt_df, x=~Overall_Median, type='scatter', mode='lines', frame=~Year, color="Overall Median Salary",
                 line=list(color='black', dash='dash', width=2)) %>%
-      layout(yaxis=list(title=" "), xaxis=list(title="Median Salary (USD)"), 
+      layout(yaxis=list(title=" ", categoryorder = "total ascending"), xaxis=list(title="Median Salary (USD)"), 
              title=list(text="<a href='https://nces.ed.gov/programs/digest/d20/tables/dt20_502.20.asp'>Source: Table 502.20; National Center for Education Statistics</a>", x = 0.17), # left align hyperlinked title
-        margin=list(t=60), height=660, legend=list(x=0.66, y=0.1, bgcolor = "#E2E2E2"))
+             margin=list(t=60), height=660, legend=list(x=0.66, y=0.1, bgcolor = "#E2E2E2"))
   })
   
   #single year plot
   output$year <- renderPlotly({
     melt_df2 <- melt_df %>%
-      dplyr::filter(Year==yearChoice())
+      dplyr::filter(Year==yearChoice()) %>% 
+      mutate(perc_diff = ((value - Overall_Median)/Overall_Median)*100)
     
-    names <- scales::dollar_format()(melt_df2$value)
-    annotat <- list(x = 0.83, y = 0.24,
+    annotat <- list(x = 0.83, y = 0.24, # add year in big font
                  xref = 'paper', yref = 'paper',
                  text = yearChoice(),
                  xanchor = 'right', yanchor='bottom', 
                  showarrow = F, font=list(size=45))
     
-    plot_ly(melt_df2, x=~value, y=~eduGroup, type = 'bar', color=~Sex, text=names, textposition = 'auto',
+    melt_df2 <- melt_df2 %>%
+      mutate(Change = ifelse(perc_diff > 0, paste0("+", round(perc_diff,1)), round(perc_diff,1)))
+    
+    names <- scales::dollar_format()(melt_df2$value)
+    text_type <- if(textChoice() == "Salary") names else paste0(melt_df2$Change,"%")
+    
+    plot_ly(melt_df2, x=~value, y=~eduGroup, type = 'bar', color=~Sex, text=text_type, textposition='auto',
             insidetextfont = list(size=10, color = 'black')) %>% 
       add_trace(melt_df2, x=~Overall_Median, type='scatter', mode='lines', color="Overall Median Salary", text="",
                 line=list(color='black', dash='dash', width=2)) %>%
-      layout(yaxis=list(title=" "), xaxis=list(title="Median Salary (USD)"), 
+      layout(yaxis=list(title=" ", categoryorder = "total ascending"), xaxis=list(title="Median Salary (USD)"), 
              title=list(text="<a href='https://nces.ed.gov/programs/digest/d20/tables/dt20_502.20.asp'>Source: Table 502.20; National Center for Education Statistics</a>", x = 0.17), # left align hyperlinked title
              margin=list(t=60), height=660, legend=list(x=0.66, y=0.1, bgcolor = "#E2E2E2"),
              annotations=annotat)
